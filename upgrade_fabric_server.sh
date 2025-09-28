@@ -9,7 +9,6 @@ fi
 LIB_DIR="$(dirname "$0")/lib"
 source "$LIB_DIR/ui.sh"
 source "$LIB_DIR/files.sh"
-source "$LIB_DIR/download.sh"
 source "$LIB_DIR/modrinth.sh"
 
 MC_HOME="/home/mine"
