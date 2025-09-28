@@ -72,15 +72,21 @@ parse_startup_for_installer_version() {
 	if [ ! -f "$STARTUP_SH" ]; then
 		return 1
 	fi
-
-	# Look for filenames like fabric-installer-1.1.0.jar or similar tokens
-	installer=$(grep -oE 'fabric-installer[-._]?[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | head -n1 || true)
-	if [ -n "$installer" ]; then
-		printf '%s\n' "$(echo "$installer" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+	# Prefer explicit 'launcher' token in startup (e.g. launcher.1.1.0 or -launcher.1.1.0)
+	inst=$(grep -oE 'launcher[._-]?[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | head -n1 || true)
+	if [ -n "$inst" ]; then
+		printf '%s\n' "$(printf '%s' "$inst" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 		return 0
 	fi
 
-	# If explicit 'fabric-installer' not present, try to find any 3-part version that looks like an installer
+	# Fallback: look for fabric-installer-1.1.0 style tokens
+	installer=$(grep -oE 'fabric-installer[-._]?[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | head -n1 || true)
+	if [ -n "$installer" ]; then
+		printf '%s\n' "$(printf '%s' "$installer" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+		return 0
+	fi
+
+	# Last-resort: return the first unique 3-part version found
 	ver=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | sort -u | head -n1 || true)
 	if [ -n "$ver" ]; then
 		printf '%s\n' "$ver"
