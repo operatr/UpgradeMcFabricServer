@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# File and hash helpers
 
 HASH_CMD=""
 detect_hash_cmd() {

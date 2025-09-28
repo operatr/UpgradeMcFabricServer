@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Modrinth-specific helpers
 
 query_modrinth_versions() {
-	# query_modrinth_versions <slug>
 	local slug="$1"
 	curl -fsS "https://api.modrinth.com/v2/project/$slug/version"
 }
@@ -48,7 +46,6 @@ download_modrinth_mod() {
 		hash_value=""
 	fi
 
-	# If file exists and we have a hash, compare and skip if identical
 	if [ -n "$hash_value" ] && [ -f "$targetfile" ]; then
 		local localhash
 		localhash=$(compute_hash "$targetfile" "$hash_algo" || true)

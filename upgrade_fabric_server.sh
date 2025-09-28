@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fail fast if jq is not available. This provides an early, user-friendly error
-# before the rest of the script runs.
 if ! command -v jq >/dev/null 2>&1; then
 	echo "Required dependency 'jq' not found. Please install 'jq' (see README.md) and re-run this script." >&2
 	exit 2
 fi
 
-## Load libraries
 LIB_DIR="$(dirname "$0")/lib"
 source "$LIB_DIR/ui.sh"
 source "$LIB_DIR/files.sh"
@@ -19,8 +16,6 @@ MC_HOME="/home/mine"
 MODS_DIR="$MC_HOME/mods"
 STARTUP_SH="$MC_HOME/startup.sh"
 
-
-# check_deps: ensure jq and a downloader are present
 check_deps() {
     require_cmd jq
     if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
@@ -29,10 +24,6 @@ check_deps() {
     fi
 }
 
-# Determine available hash commands and provide a function to compute file hashes.
-## file/hash helpers are in lib/files.sh
-
-## prompt() is provided by lib/ui.sh
 
 detect_mc_version_from_jar() {
 	shopt -s nullglob
@@ -43,7 +34,7 @@ detect_mc_version_from_jar() {
 	if [ ${#found[@]} -eq 0 ]; then
 		return 1
 	fi
-	# Try to extract a minecraft version-looking token like 1.21.8
+
 	for f in "${found[@]}"; do
 		if [[ $(basename "$f") =~ ([0-9]+\.[0-9]+(\.[0-9]+)?) ]]; then
 			echo "${BASH_REMATCH[1]}"
@@ -53,27 +44,24 @@ detect_mc_version_from_jar() {
 	return 1
 }
 
-# find_fabric_server_url_from_webpage removed: using meta API + startup.sh parsing instead
-## Parse startup.sh for a fabric installer version (e.g. 1.1.0)
+
 parse_startup_for_installer_version() {
 	if [ ! -f "$STARTUP_SH" ]; then
 		return 1
 	fi
-	# Prefer explicit 'launcher' token in startup (e.g. launcher.1.1.0 or -launcher.1.1.0)
+
 	inst=$(grep -oE 'launcher[._-]?[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | head -n1 || true)
 	if [ -n "$inst" ]; then
 		printf '%s\n' "$(printf '%s' "$inst" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 		return 0
 	fi
 
-	# Fallback: look for fabric-installer-1.1.0 style tokens
 	installer=$(grep -oE 'fabric-installer[-._]?[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | head -n1 || true)
 	if [ -n "$installer" ]; then
 		printf '%s\n' "$(printf '%s' "$installer" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 		return 0
 	fi
 
-	# Last-resort: return the first unique 3-part version found
 	ver=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | sort -u | head -n1 || true)
 	if [ -n "$ver" ]; then
 		printf '%s\n' "$ver"
@@ -83,9 +71,8 @@ parse_startup_for_installer_version() {
 	return 1
 }
 
-# Minimal downloader helper inlined from lib/download.sh to keep repo minimal
+
 download_to_temp() {
-	# download_to_temp <url> <dest_tmp>
 	local url="$1" dest="$2"
 	if command -v curl >/dev/null 2>&1; then
 		curl -fSL -o "$dest" "$url"
@@ -100,23 +87,19 @@ download_fabric_server() {
 
 	echo "Preparing to download Fabric server jar for Minecraft $mc_version..."
 
-	# 1) Inspect the official page for a full meta.fabricmc.net URL that already encodes loader+installer
+
 	page=$(curl -fsSL https://fabricmc.net/use/server/ || true)
 	url=$(printf '%s' "$page" | grep -oE "https://meta.fabricmc.net/v2/versions/loader/${mc_version}/[0-9]+(\.[0-9]+){1,2}/[0-9]+(\.[0-9]+){1,2}/server/jar" | head -n1 || true)
 
-	# 2) If no fully-qualified meta URL on the page, ask meta API for a server download URL
 	if [ -z "$url" ]; then
 		echo "No pre-built server URL found on fabricmc.net page; querying meta.fabricmc.net for MC $mc_version..."
 		url=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader/${mc_version}" | jq -r '.[] | select(.downloads.server != null) | .downloads.server.url' | head -n1 || true)
 	fi
 
-	# 3) If still not found, construct using the latest loader and installer info
 	if [ -z "$url" ]; then
 		echo "Could not find direct server URL; attempting to construct one using latest loader + installer info."
-		# get latest loader version from meta API (first entry)
 		loader=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader/${mc_version}" | jq -r '.[0].loader.version // empty' | head -n1 || true)
 
-		# prefer installer version from startup.sh; fallback to meta API
 		installer=""
 		if inst=$(parse_startup_for_installer_version 2>/dev/null || true); then
 			installer="$inst"
@@ -211,11 +194,9 @@ edit_startup_sh_replace_jar() {
 		return 1
 	fi
 
-	# Replace the first .jar filename found on line 2 with the new jar basename, keep the rest of the line intact.
 	local newbasename
 	newbasename=$(basename "$newjar")
 
-	# If line 2 already contains the desired jar basename, do nothing (idempotent).
 	local line2
 	line2=$(sed -n '2p' "$STARTUP_SH" || true)
 	if [ -n "$line2" ] && echo "$line2" | grep -F -- "$newbasename" >/dev/null 2>&1; then
@@ -238,7 +219,6 @@ main() {
 
 	echo "Starting Fabric server upgrade helper. Working directory: $MC_HOME"
 
-	# Determine MC version
 	mc_version=$(detect_mc_version_from_jar || true)
 	if [ -z "$mc_version" ]; then
 		mc_version=$(prompt "Couldn't auto-detect Minecraft version. Enter the target Minecraft version (e.g. 1.21.8)" "1.21.8")
@@ -247,10 +227,8 @@ main() {
 		mc_version=$(prompt "Use detected Minecraft version" "$mc_version")
 	fi
 
-	# Step: download fabric server jar
 	download_fabric_server "$mc_version"
 
-	# Find the downloaded jar - choose the first fabric-server-mc* jar
 	shopt -s nullglob
 	jars=("$MC_HOME"/fabric-server-mc*)
 	if [ ${#jars[@]} -eq 0 ]; then
@@ -270,10 +248,8 @@ main() {
 
 	# update_misc_mods "$mc_version"
 
-	# Edit startup.sh line 2 to point to the new jar
 	edit_startup_sh_replace_jar "$newjar" || true
 
-	# Offer to restart server via systemd
 	read -rp "Attempt to restart server via systemd? Enter service name (or leave blank to skip): " svc
 	if [ -n "$svc" ]; then
 		echo "Restarting service '$svc' via sudo systemctl restart $svc"

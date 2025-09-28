@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# UI helpers: parse_args, run_cmd, confirm, prompt
 
 DRY_RUN=0
 NONINTERACTIVE=0
