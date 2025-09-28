@@ -1,6 +1,6 @@
 # upgrade_fabric_server
 
-This repository contains `upgrade_fabric_server.sh`, a shell script to upgrade a Minecrat server running Fabric API.
+This repository contains `upgrade_fabric_server.sh`, a shell script to upgrade a Minecraft server running Fabric API.
 
 Prerequisite
 ------------
