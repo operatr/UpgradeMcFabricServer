@@ -53,20 +53,7 @@ detect_mc_version_from_jar() {
 	return 1
 }
 
-find_fabric_server_url_from_webpage() {
-	local mc_version="$1"
-	# Scrape the Fabric server page for meta.fabricmc.net links that contain the MC version
-	local url
-	# Fetch the page once into a variable to avoid double downloads and quoting issues
-	local page
-	page=$(curl -fsSL https://fabricmc.net/use/server/ || true)
-	url=$(printf '%s' "$page" | grep -oE 'https://meta.fabricmc.net/v2/versions/loader/[^" ]+' | grep -F -- "$mc_version" | head -n1 || true)
-	if [ -z "$url" ]; then
-		# fallback: return the first meta.fabricmc.net link
-		url=$(printf '%s' "$page" | grep -oE 'https://meta.fabricmc.net/v2/versions/loader/[^" ]+' | head -n1 || true)
-	fi
-	echo "$url"
-}
+# find_fabric_server_url_from_webpage removed: using meta API + startup.sh parsing instead
 ## Parse startup.sh for a fabric installer version (e.g. 1.1.0)
 parse_startup_for_installer_version() {
 	if [ ! -f "$STARTUP_SH" ]; then
@@ -94,6 +81,17 @@ parse_startup_for_installer_version() {
 	fi
 
 	return 1
+}
+
+# Minimal downloader helper inlined from lib/download.sh to keep repo minimal
+download_to_temp() {
+	# download_to_temp <url> <dest_tmp>
+	local url="$1" dest="$2"
+	if command -v curl >/dev/null 2>&1; then
+		curl -fSL -o "$dest" "$url"
+	else
+		wget -q -O "$dest" "$url"
+	fi
 }
 
 download_fabric_server() {
