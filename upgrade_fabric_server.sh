@@ -80,67 +80,64 @@ download_fabric_server() {
 		read -rp "Direct Fabric server jar URL: " url
 	fi
 
-
-			return 0
-		fi
-	fi
-
-	echo "Downloading $display from: $file_url"
-	tmpfile="$dest_dir/.${filename}.part.$$"
-	if command -v curl >/dev/null 2>&1; then
-		run_cmd "curl -fSL -o '$tmpfile' '$file_url'"
-	else
-		run_cmd "wget -q -O '$tmpfile' '$file_url'"
-	fi
+	echo "Downloading Fabric server jar from: $url"
+	tmpfile="${MC_HOME}/.fabric-server.jar.part.$$"
+	download_to_temp "$url" "$tmpfile"
 
 	if [ "$DRY_RUN" -eq 1 ]; then
-		echo "Dry-run: not installing downloaded file. Temp file: $tmpfile"
-		rm -f "$tmpfile" 2>/dev/null || true
+		echo "Dry-run: not installing downloaded jar. Temp file: $tmpfile"
 		return 0
 	fi
 
 	if [ ! -f "$tmpfile" ]; then
-		echo "Download failed for $display ($file_url)." >&2
-		rm -f "$tmpfile"
+		echo "Download failed or temp file not found: $tmpfile" >&2
 		return 1
 	fi
 
-	# If we have a hash from metadata, verify downloaded file
-	if [ -n "$hash_value" ] && [ -n "$hash_algo" ]; then
-		dlhash=$(compute_hash "$tmpfile" "$hash_algo" || true)
-		if [ -z "$dlhash" ] || [ "$dlhash" != "$hash_value" ]; then
-			echo "Hash mismatch for $display after download. Expected $hash_value but got ${dlhash:-none}." >&2
-			rm -f "$tmpfile"
-			return 1
+	filename=$(basename "$url")
+	if [[ "$filename" != fabric-server-mc* ]]; then
+		filename="fabric-server-mc-${mc_version}.jar"
+	fi
+	newpath="$MC_HOME/$filename"
+
+	detect_hash_cmd
+	replaced=0
+	if [ -f "$newpath" ]; then
+		if [ -n "$HASH_CMD" ]; then
+			existing_hash=$(compute_hash "$newpath" sha512 || true)
+			dl_hash=$(compute_hash "$tmpfile" sha512 || true)
+			if [ -n "$existing_hash" ] && [ "$existing_hash" = "$dl_hash" ]; then
+				echo "Existing Fabric server jar $newpath is identical to downloaded file. Skipping replacement."
+				rm -f "$tmpfile"
+				return 0
+			fi
+		else
+			existing_size=$(stat -c%s "$newpath" 2>/dev/null || stat -f%z "$newpath" 2>/dev/null || echo 0)
+			dl_size=$(stat -c%s "$tmpfile" 2>/dev/null || stat -f%z "$tmpfile" 2>/dev/null || echo 0)
+			if [ "$existing_size" = "$dl_size" ] && [ "$existing_size" != "0" ]; then
+				echo "Existing Fabric server jar $newpath has same size as downloaded file. Skipping replacement."
+				rm -f "$tmpfile"
+				return 0
+			fi
 		fi
-		mv -f "$tmpfile" "$targetfile"
-		echo "Downloaded and wrote: $targetfile"
-		return 0
 	fi
 
-	# No hash available in metadata. Use size heuristic and prompt before overwriting.
-	if [ -f "$targetfile" ]; then
-		existing_size=$(stat -c%s "$targetfile" 2>/dev/null || stat -f%z "$targetfile" 2>/dev/null || echo 0)
-		dl_size=$(stat -c%s "$tmpfile" 2>/dev/null || stat -f%z "$tmpfile" 2>/dev/null || echo 0)
-		if [ "$existing_size" = "$dl_size" ] && [ "$existing_size" != "0" ]; then
-			echo "$display already exists and has the same size as the downloaded file. Skipping replace."
-			rm -f "$tmpfile"
-			return 0
-		fi
+	shopt -s nullglob
+	oldjars=(fabric-server-mc*)
+	if [ ${#oldjars[@]} -gt 0 ]; then
+		for oj in "${oldjars[@]}"; do
+			if [ "$oj" != "$(basename "$newpath")" ]; then
+				echo "Backing up old jar $oj -> ${oj}.bak"
+				run_cmd "mv -f '$oj' '${oj}.bak'"
+				replaced=1
+			fi
+		done
+	fi
 
-		if confirm "Replace existing $filename for $display?"; then
-			mv -f "$tmpfile" "$targetfile"
-			echo "Replaced $targetfile"
-			return 0
-		else
-			echo "Keeping existing $targetfile. Download removed."
-			rm -f "$tmpfile"
-			return 0
-		fi
-	else
-		mv -f "$tmpfile" "$targetfile"
-		echo "Downloaded and wrote: $targetfile"
-		return 0
+	run_cmd "mv -f '$tmpfile' '$newpath'"
+	echo "Installed Fabric server jar: $newpath"
+	if [ $replaced -eq 1 ]; then
+		echo "Previous jars were backed up with .bak suffixes."
 	fi
 }
 
