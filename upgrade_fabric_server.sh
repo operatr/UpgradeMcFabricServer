@@ -67,24 +67,81 @@ find_fabric_server_url_from_webpage() {
 	fi
 	echo "$url"
 }
-## download_fabric_server remains in main script to orchestrate using lib/download.sh
+## Parse startup.sh for a fabric installer version (e.g. 1.1.0)
+parse_startup_for_installer_version() {
+	if [ ! -f "$STARTUP_SH" ]; then
+		return 1
+	fi
+
+	# Look for filenames like fabric-installer-1.1.0.jar or similar tokens
+	installer=$(grep -oE 'fabric-installer[-._]?[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | head -n1 || true)
+	if [ -n "$installer" ]; then
+		printf '%s\n' "$(echo "$installer" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+		return 0
+	fi
+
+	# If explicit 'fabric-installer' not present, try to find any 3-part version that looks like an installer
+	ver=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | sort -u | head -n1 || true)
+	if [ -n "$ver" ]; then
+		printf '%s\n' "$ver"
+		return 0
+	fi
+
+	return 1
+}
+
 download_fabric_server() {
 	local mc_version="$1"
 	cd "$MC_HOME"
 
-	echo "Searching fabricmc.net for a server jar matching Minecraft $mc_version..."
-	local url
-	url=$(find_fabric_server_url_from_webpage "$mc_version")
+	echo "Preparing to download Fabric server jar for Minecraft $mc_version..."
+
+	# 1) Inspect the official page for a full meta.fabricmc.net URL that already encodes loader+installer
+	page=$(curl -fsSL https://fabricmc.net/use/server/ || true)
+	url=$(printf '%s' "$page" | grep -oE "https://meta.fabricmc.net/v2/versions/loader/${mc_version}/[0-9]+(\.[0-9]+){1,2}/[0-9]+(\.[0-9]+){1,2}/server/jar" | head -n1 || true)
+
+	# 2) If no fully-qualified meta URL on the page, ask meta API for a server download URL
 	if [ -z "$url" ]; then
-		echo "Couldn't find a Fabric server jar link automatically. Please provide a direct download URL." >&2
-		read -rp "Direct Fabric server jar URL: " url
+		echo "No pre-built server URL found on fabricmc.net page; querying meta.fabricmc.net for MC $mc_version..."
+		url=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader/${mc_version}" | jq -r '.[] | select(.downloads.server != null) | .downloads.server.url' | head -n1 || true)
+	fi
+
+	# 3) If still not found, construct using the latest loader and installer info
+	if [ -z "$url" ]; then
+		echo "Could not find direct server URL; attempting to construct one using latest loader + installer info."
+		# get latest loader version from meta API (first entry)
+		loader=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader/${mc_version}" | jq -r '.[0].loader.version // empty' | head -n1 || true)
+
+		# prefer installer version from startup.sh; fallback to meta API
+		installer=""
+		if inst=$(parse_startup_for_installer_version 2>/dev/null || true); then
+			installer="$inst"
+			echo "Using installer version from $STARTUP_SH: $installer"
+		else
+			installer=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader/${mc_version}" | jq -r '.[0].installer.version // empty' | head -n1 || true)
+			if [ -n "$installer" ]; then
+				echo "Using installer version from meta API: $installer"
+			fi
+		fi
+
+		if [ -n "$loader" ] && [ -n "$installer" ]; then
+			url="https://meta.fabricmc.net/v2/versions/loader/${mc_version}/${loader}/${installer}/server/jar"
+			echo "Constructed server URL: $url"
+		else
+			echo "Unable to determine loader+installer from meta API or startup.sh."
+			read -rp "Enter direct Fabric server jar URL (or leave blank to abort): " url
+			if [ -z "$url" ]; then
+				echo "No URL provided. Aborting download step." >&2
+				return 1
+			fi
+		fi
 	fi
 
 	echo "Downloading Fabric server jar from: $url"
 	tmpfile="${MC_HOME}/.fabric-server.jar.part.$$"
 	download_to_temp "$url" "$tmpfile"
 
-	if [ "$DRY_RUN" -eq 1 ]; then
+	if [ "${DRY_RUN:-0}" -eq 1 ]; then
 		echo "Dry-run: not installing downloaded jar. Temp file: $tmpfile"
 		return 0
 	fi
@@ -139,31 +196,8 @@ download_fabric_server() {
 	if [ $replaced -eq 1 ]; then
 		echo "Previous jars were backed up with .bak suffixes."
 	fi
-}
 
-update_misc_mods() {
-	local mc_version="$1"
-	# List of default modrinth slugs to try. User can edit or extend this list.
-	declare -A default_slugs=(
-		["Fabric API"]="fabric-api"
-		["Floodgate-Fabric"]="floodgate"
-		["Geyser-Fabric"]="geyser"
-		["ViaBackwards"]="viabackwards"
-		["ViaFabric"]="viafabric"
-		["Vivecraft"]="vivecraft"
-		["VoiceChat"]="voicechat"
-	)
-
-	for name in "${!default_slugs[@]}"; do
-		slug=${default_slugs[$name]}
-		read -rp "Update $name (slug: $slug)? [Y/n]: " yn
-		yn=${yn:-Y}
-		if [[ $yn =~ ^[Yy] ]]; then
-			download_modrinth_mod "$slug" "$name" "$mc_version" || echo "Failed to update $name"
-		else
-			echo "Skipping $name"
-		fi
-	done
+	return 0
 }
 
 edit_startup_sh_replace_jar() {
