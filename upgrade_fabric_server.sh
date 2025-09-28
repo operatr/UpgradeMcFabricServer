@@ -262,15 +262,15 @@ main() {
 	newjar="${jars[0]}"
 
 	# Step: update mods
-	if [ ! -d "$MODS_DIR" ]; then
-		echo "Mods directory $MODS_DIR does not exist. Creating it."
-		mkdir -p "$MODS_DIR"
-	fi
+	# if [ ! -d "$MODS_DIR" ]; then
+	# 	echo "Mods directory $MODS_DIR does not exist. Creating it."
+	# 	mkdir -p "$MODS_DIR"
+	# fi
 
-	echo "Changing to mods directory: $MODS_DIR"
-	cd "$MODS_DIR"
+	# echo "Changing to mods directory: $MODS_DIR"
+	# cd "$MODS_DIR"
 
-	update_misc_mods "$mc_version"
+	# update_misc_mods "$mc_version"
 
 	# Edit startup.sh line 2 to point to the new jar
 	edit_startup_sh_replace_jar "$newjar" || true
