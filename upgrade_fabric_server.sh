@@ -45,6 +45,7 @@ detect_mc_version_from_jar() {
 
 
 parse_startup_for_installer_version() {
+	local target_mc="${1:-}"
 	if [ ! -f "$STARTUP_SH" ]; then
 		return 1
 	fi
@@ -59,6 +60,14 @@ parse_startup_for_installer_version() {
 	if [ -n "$installer" ]; then
 		printf '%s\n' "$(printf '%s' "$installer" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 		return 0
+	fi
+
+	if [ -n "$target_mc" ]; then
+		ver=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | sort -u | awk -v m="$target_mc" '$0 != m { print; exit }' || true)
+		if [ -n "$ver" ]; then
+			printf '%s\n' "$ver"
+			return 0
+		fi
 	fi
 
 	ver=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$STARTUP_SH" | sort -u | head -n1 || true)
@@ -100,7 +109,7 @@ download_fabric_server() {
 		loader=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader/${mc_version}" | jq -r '.[0].loader.version // empty' | head -n1 || true)
 
 		installer=""
-		if inst=$(parse_startup_for_installer_version 2>/dev/null || true); then
+		if inst=$(parse_startup_for_installer_version "$mc_version" 2>/dev/null || true); then
 			installer="$inst"
 			echo "Using installer version from $STARTUP_SH: $installer"
 		else
