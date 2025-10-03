@@ -108,12 +108,16 @@ download_fabric_server() {
 		echo "Could not find direct server URL; attempting to construct one using latest loader + installer info."
 		loader=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader/${mc_version}" | jq -r '.[0].loader.version // empty' | head -n1 || true)
 
-		installer=""
-		if inst=$(parse_startup_for_installer_version "$mc_version" 2>/dev/null || true); then
-			installer="$inst"
-			echo "Using installer version from $STARTUP_SH: $installer"
-		else
-			installer=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader/${mc_version}" | jq -r '.[0].installer.version // empty' | head -n1 || true)
+		installer="1.1.0"
+
+
+		entries=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader/${mc_version}" || true)
+		if [ -z "$installer" ] && [ -n "$entries" ]; then
+			installer=$(printf '%s' "$entries" | jq -r --arg loader "$loader" '.[] | select((.loader.version == $loader) and (.downloads.server != null)) | .installer.version' | head -n1 || true)
+		fi
+
+		if [ -z "$installer" ] && [ -n "$entries" ]; then
+			installer=$(printf '%s' "$entries" | jq -r '.[0].installer.version // empty' | head -n1 || true)
 			if [ -n "$installer" ]; then
 				echo "Using installer version from meta API: $installer"
 			fi
